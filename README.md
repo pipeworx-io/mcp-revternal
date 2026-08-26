@@ -1,17 +1,28 @@
-# mcp-revternal
+# @pipeworx/revternal
 
-Revternal MCP — wraps the Revternal Developer Intelligence API
+Revternal MCP — people and developer intelligence from Revternal (api.revternal.com):
+search a live index of ~12M developer profiles, behavioural intel per developer,
+and person-level search and enrichment across job titles, companies, and skills.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1394+ live data sources.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1476+ live data sources.
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `revternal_search_developers` | Search a live index of ~11.7M developers (GitHub-centric) by role, primary programming language, location, and recent activity — for recruiting, GTM/lead-gen, and developer-audience research. Returns matching GitHub usernames with role, primary language, location, and last-active timestamp. Filters: role (e.g. "backend engineer", "ai/ml engineer"), primary_language (e.g. "Python", "Rust"), location, active_within_days (only devs active in the last N days), sort_by (default last_active). Paginate with limit + offset. Example: revternal_search_developers({ primary_language: "Rust", active_within_days: 30, limit: 20 }). |
-| `revternal_developer_intel` | Get behavioural intelligence for one developer by GitHub username — how they actually work, not just their bio. Returns work pattern (chronotype, peak hours, work rhythm, activity trend, velocity change), collaboration style (solo vs team, external PR ratio, reviews given), professionalism signals (commit quality, conventional commits, primary work type), and activity recency. Use to assess engagement, seniority signals, and outreach timing. Example: revternal_developer_intel({ github_username: "torvalds" }). |
-| `revternal_enrich_developer` | Enrich a developer from their GitHub profile URL — full firmographic + technical profile. Returns name, location, company, followers, years active, seniority estimate, and a ranked skills breakdown (languages by repo share). Use to enrich a lead or candidate you already have a GitHub URL for. Example: revternal_enrich_developer({ github_url: "https://github.com/torvalds" }). |
-| `revternal_index_stats` | Index statistics for the Revternal developer-intelligence dataset — total profiles indexed and processing status. Use to gauge coverage and freshness before relying on search results. Example: revternal_index_stats({}). |
+- `revternal_search_developers(...)` — search developers by role, primary language, location, recency.
+- `revternal_developer_intel(github_username)` — behavioural profile: work pattern, collaboration style, professionalism signals.
+- `revternal_enrich_developer(github_url)` — full developer profile from a GitHub URL.
+- `revternal_people_search(...)` — search any person by job title, seniority, location (ISO-3 countries + cities), current company domain, skills, or stealth-founder status; cursor pagination.
+- `revternal_enrich_person(linkedin_url, fetch_live?)` — full person profile from a LinkedIn `/in/` URL: experience, education, skills, certifications, photo. `fetch_live: false` (default) reads Revternal's existing record (`found: false` if none); `fetch_live: true` requests a fresh fetch.
+- `revternal_index_stats()` — index size and processing status.
+
+## Auth
+
+Platform-keyed — works out of the box through the gateway. You may also pass
+your own Revternal key as `_apiKey` (sent as `x-api-key`).
+
+## Data sources
+
+- https://api.revternal.com (docs: https://revternal.com/docs)
 
 ## Quick Start
 
@@ -27,7 +38,25 @@ Add to your MCP client (Claude Desktop, Cursor, Windsurf, etc.):
 }
 ```
 
-Or connect to the full Pipeworx gateway for access to all 1394+ data sources:
+### What this endpoint actually serves
+
+`tools/list` at `https://gateway.pipeworx.io/revternal/mcp` returns the tools in the table
+above **plus the shared Pipeworx meta-tools** — `ask_pipeworx`,
+`discover_tools`, `search_within`, `remember`/`recall` and the rest of the
+gateway-wide set. So the tool count you see is larger than this table: a
+single-pack endpoint currently lists roughly 30 shared tools alongside the
+pack's own. The connection's `initialize` response states its exact scope, and
+is the authoritative answer for a given day.
+
+This is deliberate, not multiplexing by accident. The meta-tools are what let a
+scoped connection answer a question this pack does not cover — via
+`ask_pipeworx`, which routes across the whole catalog — without you adding a
+second MCP server. There is currently no way to mount a pack endpoint without
+them; if the extra schemas cost you more context than the routing is worth,
+connect to the full gateway once rather than to several pack endpoints.
+
+Or connect to the full Pipeworx gateway to get every pack's tools listed
+directly, instead of just this one's:
 
 ```json
 {
@@ -39,9 +68,14 @@ Or connect to the full Pipeworx gateway for access to all 1394+ data sources:
 }
 ```
 
+Both URLs reach the same gateway and the same 1476+ data sources. The
+only difference is which pack's tools are listed **directly**; `ask_pipeworx`
+reaches all of them from either one.
+
 ## Using with ask_pipeworx
 
-Instead of calling tools directly, you can ask questions in plain English:
+Instead of calling tools directly, you can ask questions in plain English —
+this works on the pack endpoint above as well as on the full gateway:
 
 ```
 ask_pipeworx({ question: "your question about Revternal data" })
