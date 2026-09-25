@@ -1,11 +1,19 @@
 interface McpToolDefinition {
   name: string;
   description: string;
+  /** Human-facing one-liner (fleet #1967). Optional; consumers fall back to
+   *  description. Kept in step with shared/src/types.ts — scripts/lib/
+   *  check-inlined-types.mjs reports drift at publish time. */
+  summary?: string;
   inputSchema: {
     type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
+    anyOf?: Array<{ required: string[] }>;
+    oneOf?: Array<{ required: string[] }>;
+    allOf?: Array<{ required: string[] }>;
   };
+  outputSchema?: Record<string, unknown>;
 }
 
 interface McpToolExport {
@@ -30,8 +38,16 @@ interface McpToolExport {
  * - revternal_search_developers  — GET /developer/search (filter by role, language, location, recency)
  * - revternal_developer_intel    — GET /developer/intel (work pattern / behaviour by GitHub username)
  * - revternal_enrich_developer   — POST /developer/enrich (full profile from a GitHub URL)
- * - revternal_enrich_person      — POST /enrich/people (profile from a LinkedIn URL)
  * - revternal_index_stats        — GET /developer/stats (index size / freshness)
+ * - revternal_people_search      — POST /v1/people/search (any person, by title/seniority/location/company/skills)
+ * - revternal_enrich_person      — POST /v1/person/enrich (full person profile from a LinkedIn URL)
+ *
+ * The /v1 people endpoints shipped 2026-08-12 (they replaced the earlier
+ * /enrich/people + /person/enrich paths that 502'd pre-launch). People Search
+ * requires at least one filter and answers 422 for enum/format mistakes;
+ * person enrichment with fetchLive=false answers 404 when Revternal has no
+ * existing record for that URL — both are caller-shaped outcomes, not outages,
+ * and are mapped to user_error / found:false below.
  */
 
 
@@ -84,13 +100,35 @@ const tools: McpToolExport['tools'] = [
     },
   },
   {
-    name: 'revternal_enrich_person',
+    name: 'revternal_people_search',
     description:
-      'Enrich a person from their LinkedIn profile URL. Returns the enriched profile record for recruiting / GTM / contact intelligence. Example: revternal_enrich_person({ linkedin_url: "https://www.linkedin.com/in/example" }).',
+      'Search Revternal\'s people-intelligence index for any person — not just developers — by job title, seniority, location, current company domain, or skills. Returns matching people with name, headline, and profile fields, plus an opaque cursor for the next page. At least one filter is required. Seniority values: entry, senior, manager, director, vp, c_suite, owner, partner. Countries use 3-letter ISO codes (USA, GBR, IND). Use for recruiting, GTM prospecting, and lead research when you have criteria rather than a specific profile. Example: revternal_people_search({ job_titles: ["Software Engineer"], countries: ["USA"], page_size: 5 }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL.' },
+        job_titles: { type: 'array', items: { type: 'string' }, description: 'Current job titles to match, e.g. ["Software Engineer", "CTO"]. A single string is also accepted.' },
+        seniority: { type: 'array', items: { type: 'string', enum: ['entry', 'senior', 'manager', 'director', 'vp', 'c_suite', 'owner', 'partner'] }, description: 'Seniority levels to match: entry, senior, manager, director, vp, c_suite, owner, partner.' },
+        countries: { type: 'array', items: { type: 'string' }, description: '3-letter ISO country codes, e.g. ["USA", "GBR"]. Common 2-letter codes are auto-converted.' },
+        cities: { type: 'array', items: { type: 'string' }, description: 'City names to match, e.g. ["San Francisco"].' },
+        company_domains: { type: 'array', items: { type: 'string' }, description: 'Current-company website domains, e.g. ["openai.com"].' },
+        skills: { type: 'array', items: { type: 'string' }, description: 'Skills or keywords matched across profile fields, e.g. ["Python", "FastAPI"].' },
+        stealth_founder: { type: 'boolean', description: 'When true, limit results to stealth founders.' },
+        page_size: { type: 'number', description: 'Results per page, 1-100 (default 5).' },
+        cursor: { type: 'string', description: 'Opaque cursor from the previous response (next_cursor) — pass back unmodified to paginate.' },
+        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'revternal_enrich_person',
+    description:
+      'Enrich one person from their LinkedIn profile URL via Revternal — full normalized profile: name, headline, current company and title, past work experience, education, skills, certifications, and profile picture. Default (fetch_live: false) reads Revternal\'s existing record for that URL and returns found:false if there is none; set fetch_live: true to have Revternal fetch a fresh profile (slower, higher vendor cost). Use to enrich a lead, candidate, or contact you already have a LinkedIn URL for. Example: revternal_enrich_person({ linkedin_url: "https://www.linkedin.com/in/vishalv06" }).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        linkedin_url: { type: 'string', description: 'Personal LinkedIn profile URL containing /in/, e.g. "https://www.linkedin.com/in/vishalv06". A bare username is also accepted.' },
+        fetch_live: { type: 'boolean', description: 'false (default): return Revternal\'s existing profile record, found:false if none. true: Revternal fetches fresh profile data (slower, higher vendor cost).' },
         _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
       },
       required: ['linkedin_url'],
@@ -148,6 +186,65 @@ async function revFetch(path: string, apiKey: string, init?: RequestInit): Promi
   }
 }
 
+/**
+ * POST to a /v1 people endpoint, returning status + parsed body instead of
+ * throwing on !ok — the people endpoints answer 404/422 for caller-shaped
+ * outcomes that must map to found:false / user_error, not a thrown "HTTP 4xx".
+ */
+async function revPost(
+  path: string,
+  apiKey: string,
+  payload: unknown,
+  timeoutMs = 25_000,
+): Promise<{ status: number; body: any }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => null);
+    return { status: res.status, body };
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error('Revternal: request timed out (live enrichment can be slow). Retry shortly.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** FastAPI-style error bodies carry `detail` as a string or a validation array. */
+function detailOf(body: any): string {
+  const d = body?.detail ?? body?.message ?? body?.error;
+  if (typeof d === 'string') return d;
+  return d ? JSON.stringify(d) : 'invalid request';
+}
+
+/** Accept a string as a one-element (or comma-separated) list — agents pass both. */
+function asList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  if (typeof v === 'string' && v.trim()) return v.split(',').map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+// People Search requires 3-letter ISO country codes; agents habitually pass
+// 2-letter codes, so convert the common ones instead of bouncing the call.
+const ISO2_TO_ISO3: Record<string, string> = {
+  US: 'USA', GB: 'GBR', UK: 'GBR', IN: 'IND', DE: 'DEU', FR: 'FRA', CA: 'CAN',
+  AU: 'AUS', JP: 'JPN', CN: 'CHN', BR: 'BRA', NL: 'NLD', ES: 'ESP', IT: 'ITA',
+  SE: 'SWE', CH: 'CHE', SG: 'SGP', IL: 'ISR', MX: 'MEX', KR: 'KOR', PL: 'POL',
+  AT: 'AUT', BE: 'BEL', DK: 'DNK', FI: 'FIN', NO: 'NOR', PT: 'PRT', IE: 'IRL',
+  NZ: 'NZL', ZA: 'ZAF', AE: 'ARE', AR: 'ARG', CL: 'CHL', CO: 'COL', ID: 'IDN',
+  MY: 'MYS', PH: 'PHL', TH: 'THA', TR: 'TUR', UA: 'UKR', VN: 'VNM', TW: 'TWN',
+  HK: 'HKG', CZ: 'CZE', GR: 'GRC', HU: 'HUN', RO: 'ROU', RU: 'RUS', SA: 'SAU',
+  EG: 'EGY', NG: 'NGA', KE: 'KEN', PK: 'PAK', BD: 'BGD', LK: 'LKA', EE: 'EST',
+};
+
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
   const n = Number(v);
   if (!Number.isFinite(n)) return dflt;
@@ -158,8 +255,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
   const apiKey = typeof args._apiKey === 'string' ? args._apiKey : '';
   if (!apiKey) {
     return {
-      error: 'Revternal API key required.',
-      retry_hint: 'Pass an x-api-key value as _apiKey, or the operator can set PLATFORM_REVTERNAL_KEY so it is injected automatically.',
+      error: 'Revternal requires an API key: pass your x-api-key value as the _apiKey argument.',
+      retry_hint: 'Pass your Revternal x-api-key value as the _apiKey argument.',
     };
   }
 
@@ -188,10 +285,90 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
         if (!url) return { error: 'github_url is required', retry_hint: 'Pass a full GitHub profile URL, e.g. {"github_url":"https://github.com/torvalds"}.' };
         return await revFetch('/developer/enrich', apiKey, { method: 'POST', body: JSON.stringify({ github_url: url }) });
       }
+      case 'revternal_people_search': {
+        const jobTitles = asList(args.job_titles);
+        const seniority = asList(args.seniority).map((s) => s.toLowerCase().replace(/[- ]/g, '_'));
+        const countries = asList(args.countries).map((c) => {
+          const u = c.toUpperCase();
+          return ISO2_TO_ISO3[u] ?? u;
+        });
+        const cities = asList(args.cities);
+        const domains = asList(args.company_domains);
+        const skills = asList(args.skills);
+        const body: Record<string, unknown> = {};
+        if (jobTitles.length) body.job_titles = jobTitles;
+        if (seniority.length) body.seniority = seniority;
+        if (countries.length || cities.length) body.location = { countries, cities };
+        if (domains.length) body.current_company = { domains };
+        if (skills.length) body.skills = skills;
+        if (args.stealth_founder === true) body.stealth_founder = true;
+        if (Object.keys(body).length === 0) {
+          return {
+            error: 'user_error: at least one of job_titles, seniority, countries, cities, company_domains, skills, or stealth_founder must be provided.',
+            retry_hint: 'Add a search filter, e.g. {"job_titles":["Software Engineer"],"countries":["USA"]}.',
+          };
+        }
+        body.page_size = clampInt(args.page_size, 1, 100, 5);
+        if (typeof args.cursor === 'string' && args.cursor.trim()) body.cursor = args.cursor.trim();
+        const { status, body: resBody } = await revPost('/v1/people/search', apiKey, body);
+        if (status === 422) {
+          return {
+            error: `user_error: Revternal rejected the search filters: ${detailOf(resBody)}`,
+            retry_hint: 'seniority must be one of entry|senior|manager|director|vp|c_suite|owner|partner; countries must be 3-letter ISO codes like USA or GBR; company_domains must be bare domains like "openai.com"; page_size 1-100.',
+          };
+        }
+        if (status >= 400) throw revternalError(status, 'people/search');
+        return resBody;
+      }
       case 'revternal_enrich_person': {
-        const url = typeof args.linkedin_url === 'string' ? args.linkedin_url.trim() : '';
-        if (!url) return { error: 'linkedin_url is required', retry_hint: 'Pass a full LinkedIn profile URL.' };
-        return await revFetch('/enrich/people', apiKey, { method: 'POST', body: JSON.stringify({ linkedin_url: url }) });
+        const raw = typeof args.linkedin_url === 'string' ? args.linkedin_url.trim() : '';
+        if (!raw) {
+          return {
+            error: 'user_error: linkedin_url is required',
+            retry_hint: 'Pass a LinkedIn /in/ profile URL, e.g. {"linkedin_url":"https://www.linkedin.com/in/vishalv06"}.',
+          };
+        }
+        // Forgiving input: full URL, schemeless linkedin.com/in/x, or a bare username.
+        let linkedinUrl = raw;
+        if (!/linkedin\.com/i.test(raw)) {
+          if (/^[\w.-]+$/.test(raw)) linkedinUrl = `https://www.linkedin.com/in/${raw}`;
+        } else if (!raw.includes('://')) {
+          linkedinUrl = `https://${raw}`;
+        }
+        if (!/linkedin\.com\/in\/[^/]+/i.test(linkedinUrl)) {
+          return {
+            error: `user_error: "${raw}" is not a personal LinkedIn profile URL — it must contain /in/<username>.`,
+            retry_hint: 'Pass a personal profile URL like "https://www.linkedin.com/in/vishalv06" (company pages are not supported), or just the username.',
+          };
+        }
+        const fetchLive = args.fetch_live === true;
+        const { status, body: resBody } = await revPost(
+          '/v1/person/enrich',
+          apiKey,
+          { linkedin_url: linkedinUrl, fetchLive },
+          fetchLive ? 45_000 : 25_000,
+        );
+        if (status === 404) {
+          return fetchLive
+            ? {
+                found: false,
+                reason: 'profile_not_found',
+                hint: `Revternal could not find a profile at ${linkedinUrl}. Check the username spelling.`,
+              }
+            : {
+                found: false,
+                reason: 'no_existing_profile',
+                hint: 'Revternal has no existing record for this URL. Retry with fetch_live: true to fetch a fresh profile (higher vendor cost), or check the username.',
+              };
+        }
+        if (status === 422) {
+          return {
+            error: `user_error: Revternal rejected the request: ${detailOf(resBody)}`,
+            retry_hint: 'linkedin_url must be a personal /in/ profile URL; fetch_live must be a boolean.',
+          };
+        }
+        if (status >= 400) throw revternalError(status, 'person/enrich');
+        return resBody;
       }
       case 'revternal_index_stats':
         return await revFetch('/developer/stats', apiKey);
