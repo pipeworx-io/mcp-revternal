@@ -1,10 +1,10 @@
 # @pipeworx/revternal
 
-Revternal MCP — people and developer intelligence from Revternal (api.revternal.com):
+Revternal MCP — people and developer intelligence from Revternal:
 search a live index of ~12M developer profiles, behavioural intel per developer,
 and person-level search and enrichment across job titles, companies, and skills.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1679+ live data sources.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1784+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
 
 ## Tools
 
@@ -13,16 +13,16 @@ Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents 
 - `revternal_enrich_developer(github_url)` — full developer profile from a GitHub URL.
 - `revternal_people_search(...)` — search any person by job title, seniority, location (ISO-3 countries + cities), current company domain, skills, or stealth-founder status; cursor pagination.
 - `revternal_enrich_person(linkedin_url, fetch_live?)` — full person profile from a LinkedIn `/in/` URL: experience, education, skills, certifications, photo. `fetch_live: false` (default) reads Revternal's existing record (`found: false` if none); `fetch_live: true` requests a fresh fetch.
-- `revternal_index_stats()` — index size and processing status.
+- `revternal_credit_balance()` — the calling key's credit balance, plan, and status. Free; does not consume credits.
 
 ## Auth
 
-Platform-keyed — works out of the box through the gateway. You may also pass
-your own Revternal key as `_apiKey` (sent as `x-api-key`).
+BYOK only — pass your own Revternal key as `_apiKey` (sent as `x-api-key`).
+There is currently no Pipeworx-funded platform key for this pack.
 
 ## Data sources
 
-- https://api.revternal.com (docs: https://revternal.com/docs)
+- Revternal, people and developer intelligence API (docs: https://revternal.com/docs)
 
 ## Quick Start
 
@@ -68,19 +68,13 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1679+ data sources. The
+Both URLs reach the same gateway and the same 1784+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 
 ## No MCP client? Call it over HTTP
 
-```bash
-curl -X POST https://gateway.pipeworx.io/v1/tools/revternal_search_developers \
-  -H 'Content-Type: application/json' \
-  -d '{"primary_language":"Rust","active_within_days":30,"limit":20}'
-```
-
-No account needed for the first calls. Inspect any tool: `GET https://gateway.pipeworx.io/v1/tools/revternal_search_developers`. Find one: `POST https://gateway.pipeworx.io/v1/tools/search_packs` with `{"query":"..."}`.
+This pack takes your own API key (`_apiKey`) — we don't front one for it, so there's no curl here that would run without it. Inspect any tool: `GET https://gateway.pipeworx.io/v1/tools/revternal_search_developers`. Find one: `POST https://gateway.pipeworx.io/v1/tools/search_packs` with `{"query":"..."}`.
 
 ## Standalone (no gateway account)
 

@@ -25,29 +25,38 @@ interface McpToolExport {
 }
 
 /**
- * Revternal MCP — wraps the Revternal Developer Intelligence API
- * (api.revternal.com). Multi-source developer enrichment + search over an
- * index of ~11.7M developer profiles (GitHub-centric), plus LinkedIn person
- * enrichment.
+ * Revternal MCP — wraps Revternal's people/developer intelligence API
+ * (api.revternal.com), rebuilt 2026-10-13 onto Revternal's CURRENT product
+ * (fleet #3009 — their CEO flagged the previous build as the old product).
  *
- * Auth: `x-api-key` header. Platform-keyed — the gateway injects the shared
- * key as `_apiKey` (PLATFORM_REVTERNAL_KEY); callers may also pass their own
- * `_apiKey`. Vendor-approved for resale.
+ * Every route now carries the `/v1` prefix the current docs
+ * (https://revternal.com/docs/) require. The pack's first cut (2026-07-21)
+ * called the unprefixed `/developer/*` paths, which the vendor has since
+ * moved on from — `api.revternal.com/openapi.json` 404s, and those unprefixed
+ * paths are absent from the current docs entirely. The `/v1/people/*` routes
+ * (added 2026-08-12) already used the right prefix and are unchanged here.
+ *
+ * Auth: `x-api-key` header, BYOK only. The prior platform key
+ * (PLATFORM_REVTERNAL_KEY) returned HTTP 402 ("organization does not have
+ * enough credits" — Revternal's own documented meaning for that status) on
+ * every metered route tested live through the gateway on 2026-10-13, so
+ * `platformKeyEnv` has been removed from the pack manifest: callers must
+ * supply their own key as `_apiKey`. Bruce is sourcing a replacement platform
+ * key from Revternal; when it lands it goes into the PLATFORM_KEYS_JSON shim,
+ * not back into this binding.
  *
  * Tools:
- * - revternal_search_developers  — GET /developer/search (filter by role, language, location, recency)
- * - revternal_developer_intel    — GET /developer/intel (work pattern / behaviour by GitHub username)
- * - revternal_enrich_developer   — POST /developer/enrich (full profile from a GitHub URL)
- * - revternal_index_stats        — GET /developer/stats (index size / freshness)
- * - revternal_people_search      — POST /v1/people/search (any person, by title/seniority/location/company/skills)
- * - revternal_enrich_person      — POST /v1/person/enrich (full person profile from a LinkedIn URL)
+ * - revternal_search_developers  — developer search by role, language, location, recency
+ * - revternal_developer_intel    — work pattern / behaviour by GitHub username
+ * - revternal_enrich_developer   — full developer profile from a GitHub URL
+ * - revternal_people_search      — any person, by title/seniority/location/company/skills
+ * - revternal_enrich_person      — full person profile from a LinkedIn URL
+ * - revternal_credit_balance     — the calling key's credit balance/plan (free; does not consume credits)
  *
- * The /v1 people endpoints shipped 2026-08-12 (they replaced the earlier
- * /enrich/people + /person/enrich paths that 502'd pre-launch). People Search
- * requires at least one filter and answers 422 for enum/format mistakes;
- * person enrichment with fetchLive=false answers 404 when Revternal has no
- * existing record for that URL — both are caller-shaped outcomes, not outages,
- * and are mapped to user_error / found:false below.
+ * People Search requires at least one filter and answers 422 for enum/format
+ * mistakes; person enrichment with fetchLive=false answers 404 when Revternal
+ * has no existing record for that URL — both are caller-shaped outcomes, not
+ * outages, and are mapped to user_error / found:false below.
  */
 
 
@@ -57,7 +66,7 @@ const tools: McpToolExport['tools'] = [
   {
     name: 'revternal_search_developers',
     description:
-      'Search a live index of ~11.7M developers (GitHub-centric) by role, primary programming language, location, and recent activity — for recruiting, GTM/lead-gen, and developer-audience research. Returns matching GitHub usernames with role, primary language, location, and last-active timestamp. Filters: role (e.g. "backend engineer", "ai/ml engineer"), primary_language (e.g. "Python", "Rust"), location, active_within_days (only devs active in the last N days), sort_by (default last_active). Paginate with limit + offset. Example: revternal_search_developers({ primary_language: "Rust", active_within_days: 30, limit: 20 }).',
+      'Search a live index of ~12M developers (GitHub-centric) by role, primary programming language, location, and recent activity — for recruiting, GTM/lead-gen, and developer-audience research. Each result is a matching GitHub username, display name, and profile URL; your search filters are echoed back on the response rather than repeated per result. Filters: role (e.g. "backend engineer", "ai/ml engineer" — spaces/punctuation are normalized to underscores), primary_language (e.g. "Python", "Rust"), location, active_within_days (only devs active in the last N days), sort_by ("last_active", "commit_quality", or "external_contribution_ratio"; default last_active). Paginate with limit + offset — each requested slot costs 1 credit. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_search_developers({ primary_language: "Rust", active_within_days: 30, limit: 20, _apiKey: "..." }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -65,10 +74,10 @@ const tools: McpToolExport['tools'] = [
         primary_language: { type: 'string', description: 'Primary programming language, e.g. "Python", "Rust", "TypeScript".' },
         location: { type: 'string', description: 'Location filter, e.g. "Berlin", "United States".' },
         active_within_days: { type: 'number', description: 'Only developers active within the last N days (>=1).' },
-        sort_by: { type: 'string', description: 'Sort field. Default "last_active".' },
-        limit: { type: 'number', description: 'Results per page, 1-100 (default 20).' },
+        sort_by: { type: 'string', description: 'Sort field: "last_active" (default), "commit_quality", or "external_contribution_ratio".' },
+        limit: { type: 'number', description: 'Results per page, 1-100 (default 20). Each requested slot costs 1 credit.' },
         offset: { type: 'number', description: 'Pagination offset (default 0).' },
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: [],
     },
@@ -76,12 +85,12 @@ const tools: McpToolExport['tools'] = [
   {
     name: 'revternal_developer_intel',
     description:
-      'Get behavioural intelligence for one developer by GitHub username — how they actually work, not just their bio. Returns work pattern (chronotype, peak hours, work rhythm, activity trend, velocity change), collaboration style (solo vs team, external PR ratio, reviews given), professionalism signals (commit quality, conventional commits, primary work type), and activity recency. Use to assess engagement, seniority signals, and outreach timing. Example: revternal_developer_intel({ github_username: "torvalds" }).',
+      'Get behavioural intelligence for one developer by GitHub username — how they actually work, not just their bio. Returns work pattern (chronotype, peak hours, work rhythm, activity trend, velocity change), collaboration style (solo vs team, external PR ratio, reviews given), professionalism signals (commit quality, conventional commits, primary work type), and activity recency. Flat 1 credit per successful lookup; a username not yet in Revternal\'s index answers 404. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_developer_intel({ github_username: "torvalds", _apiKey: "..." }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
         github_username: { type: 'string', description: 'GitHub username (login), e.g. "torvalds".' },
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: ['github_username'],
     },
@@ -89,12 +98,12 @@ const tools: McpToolExport['tools'] = [
   {
     name: 'revternal_enrich_developer',
     description:
-      'Enrich a developer from their GitHub profile URL — full firmographic + technical profile. Returns name, location, company, followers, years active, seniority estimate, and a ranked skills breakdown (languages by repo share). Use to enrich a lead or candidate you already have a GitHub URL for. Example: revternal_enrich_developer({ github_url: "https://github.com/torvalds" }).',
+      'Enrich a developer from their GitHub profile URL — full firmographic + technical profile, computed in real time (cached server-side after the first call). Returns name, location, company, bio, followers/following, repo and gist counts, years active, seniority estimate, a ranked skills breakdown (languages by repo share), top repos, 90-day activity counts, and composite scores (seniority, activity, language diversity, influence, profile completeness). Flat 2 credits per successful call. Use to enrich a lead or candidate you already have a GitHub URL for. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_enrich_developer({ github_url: "https://github.com/torvalds", _apiKey: "..." }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
         github_url: { type: 'string', description: 'Full GitHub profile URL, e.g. "https://github.com/torvalds".' },
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: ['github_url'],
     },
@@ -115,7 +124,7 @@ const tools: McpToolExport['tools'] = [
         stealth_founder: { type: 'boolean', description: 'When true, limit results to stealth founders.' },
         page_size: { type: 'number', description: 'Results per page, 1-100 (default 5).' },
         cursor: { type: 'string', description: 'Opaque cursor from the previous response (next_cursor) — pass back unmodified to paginate.' },
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: [],
     },
@@ -128,20 +137,20 @@ const tools: McpToolExport['tools'] = [
       type: 'object' as const,
       properties: {
         linkedin_url: { type: 'string', description: 'Personal LinkedIn profile URL containing /in/, e.g. "https://www.linkedin.com/in/vishalv06". A bare username is also accepted.' },
-        fetch_live: { type: 'boolean', description: 'false (default): return Revternal\'s existing profile record, found:false if none. true: Revternal fetches fresh profile data (slower, higher vendor cost).' },
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        fetch_live: { type: 'boolean', description: 'false (default): return Revternal\'s existing profile record, found:false if none (1 credit if found). true: Revternal fetches fresh profile data (5 credits, slower, higher vendor cost).' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: ['linkedin_url'],
     },
   },
   {
-    name: 'revternal_index_stats',
+    name: 'revternal_credit_balance',
     description:
-      'Index statistics for the Revternal developer-intelligence dataset — total profiles indexed and processing status. Use to gauge coverage and freshness before relying on search results. Example: revternal_index_stats({}).',
+      'Check the credit balance, plan, and status for a Revternal API key — free, does not consume credits. Use before a bulk search/enrichment run to confirm you have credits, or to diagnose a "HTTP 402 Payment Required" error from another revternal_* tool. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_credit_balance({ _apiKey: "..." }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        _apiKey: { type: 'string', description: 'Revternal API key (x-api-key). Injected from the platform key when omitted.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
       },
       required: [],
     },
@@ -150,12 +159,15 @@ const tools: McpToolExport['tools'] = [
 
 function revternalError(status: number, tool: string): Error {
   if (status === 401 || status === 403) {
+    return new Error(`Revternal: auth failed (HTTP ${status}). Your _apiKey is missing, invalid, or blocked — pass a valid Revternal API key via _apiKey.`);
+  }
+  if (status === 402) {
     return new Error(
-      `Revternal: auth failed (HTTP ${status}). The platform key is missing or invalid — pass your own key via _apiKey, or contact the operator about platform credentials.`,
+      `Revternal: the API key's organization does not have enough credits (HTTP 402). Call revternal_credit_balance to check the balance, or use a key with credits.`,
     );
   }
   if (status === 429) {
-    return new Error('Revternal: rate-limited (HTTP 429). The platform quota is momentarily exhausted; retry shortly or pass your own _apiKey.');
+    return new Error('Revternal: rate-limited (HTTP 429). Retry shortly.');
   }
   return new Error(`Revternal ${tool}: HTTP ${status}.`);
 }
@@ -273,17 +285,17 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
         if (typeof args.sort_by === 'string' && args.sort_by.trim()) qs.set('sort_by', args.sort_by.trim());
         qs.set('limit', String(clampInt(args.limit, 1, 100, 20)));
         qs.set('offset', String(clampInt(args.offset, 0, 1_000_000, 0)));
-        return await revFetch(`/developer/search?${qs.toString()}`, apiKey);
+        return await revFetch(`/v1/developer/search?${qs.toString()}`, apiKey);
       }
       case 'revternal_developer_intel': {
         const u = typeof args.github_username === 'string' ? args.github_username.trim() : '';
         if (!u) return { error: 'github_username is required', retry_hint: 'Pass a GitHub login, e.g. {"github_username":"torvalds"}.' };
-        return await revFetch(`/developer/intel?github_username=${encodeURIComponent(u)}`, apiKey);
+        return await revFetch(`/v1/developer/intel?github_username=${encodeURIComponent(u)}`, apiKey);
       }
       case 'revternal_enrich_developer': {
         const url = typeof args.github_url === 'string' ? args.github_url.trim() : '';
         if (!url) return { error: 'github_url is required', retry_hint: 'Pass a full GitHub profile URL, e.g. {"github_url":"https://github.com/torvalds"}.' };
-        return await revFetch('/developer/enrich', apiKey, { method: 'POST', body: JSON.stringify({ github_url: url }) });
+        return await revFetch('/v1/developer/enrich', apiKey, { method: 'POST', body: JSON.stringify({ github_url: url }) });
       }
       case 'revternal_people_search': {
         const jobTitles = asList(args.job_titles);
@@ -370,8 +382,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
         if (status >= 400) throw revternalError(status, 'person/enrich');
         return resBody;
       }
-      case 'revternal_index_stats':
-        return await revFetch('/developer/stats', apiKey);
+      case 'revternal_credit_balance':
+        return await revFetch('/v1/credit-balance', apiKey);
       default:
         return { error: `Unknown tool: ${name}` };
     }
