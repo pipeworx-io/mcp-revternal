@@ -4,7 +4,7 @@ Revternal MCP — people and developer intelligence from Revternal:
 search a live index of ~12M developer profiles, behavioural intel per developer,
 and person-level search and enrichment across job titles, companies, and skills.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1784+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1800+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
 
 ## Tools
 
@@ -17,8 +17,13 @@ Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents 
 
 ## Auth
 
-BYOK only — pass your own Revternal key as `_apiKey` (sent as `x-api-key`).
-There is currently no Pipeworx-funded platform key for this pack.
+BYOK only — bring your own Revternal API key. Get one at
+https://revternal.com/signup and pass it as `_apiKey` (sent as `x-api-key`).
+Pipeworx has no platform key for this pack, so a call without `_apiKey` is
+refused with "Revternal requires an API key" before anything reaches Revternal.
+Searches and enrichments spend your key's Revternal credits; check them with
+`revternal_credit_balance` (free). An HTTP 402 from any tool means the key's
+organization is out of credits.
 
 ## Data sources
 
@@ -68,7 +73,7 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1784+ data sources. The
+Both URLs reach the same gateway and the same 1800+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 

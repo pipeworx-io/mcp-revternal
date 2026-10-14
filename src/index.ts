@@ -77,9 +77,9 @@ const tools: McpToolExport['tools'] = [
         sort_by: { type: 'string', description: 'Sort field: "last_active" (default), "commit_quality", or "external_contribution_ratio".' },
         limit: { type: 'number', description: 'Results per page, 1-100 (default 20). Each requested slot costs 1 credit.' },
         offset: { type: 'number', description: 'Pagination offset (default 0).' },
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: [],
+      required: ['_apiKey'],
     },
   },
   {
@@ -90,9 +90,9 @@ const tools: McpToolExport['tools'] = [
       type: 'object' as const,
       properties: {
         github_username: { type: 'string', description: 'GitHub username (login), e.g. "torvalds".' },
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: ['github_username'],
+      required: ['github_username', '_apiKey'],
     },
   },
   {
@@ -103,15 +103,15 @@ const tools: McpToolExport['tools'] = [
       type: 'object' as const,
       properties: {
         github_url: { type: 'string', description: 'Full GitHub profile URL, e.g. "https://github.com/torvalds".' },
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: ['github_url'],
+      required: ['github_url', '_apiKey'],
     },
   },
   {
     name: 'revternal_people_search',
     description:
-      'Search Revternal\'s people-intelligence index for any person — not just developers — by job title, seniority, location, current company domain, or skills. Returns matching people with name, headline, and profile fields, plus an opaque cursor for the next page. At least one filter is required. Seniority values: entry, senior, manager, director, vp, c_suite, owner, partner. Countries use 3-letter ISO codes (USA, GBR, IND). Use for recruiting, GTM prospecting, and lead research when you have criteria rather than a specific profile. Example: revternal_people_search({ job_titles: ["Software Engineer"], countries: ["USA"], page_size: 5 }).',
+      'Search Revternal\'s people-intelligence index for any person — not just developers — by job title, seniority, location, current company domain, or skills. Returns matching people with name, headline, and profile fields, plus an opaque cursor for the next page. At least one filter is required. Seniority values: entry, senior, manager, director, vp, c_suite, owner, partner. Countries use 3-letter ISO codes (USA, GBR, IND). Use for recruiting, GTM prospecting, and lead research when you have criteria rather than a specific profile. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_people_search({ job_titles: ["Software Engineer"], countries: ["USA"], page_size: 5 }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -124,23 +124,23 @@ const tools: McpToolExport['tools'] = [
         stealth_founder: { type: 'boolean', description: 'When true, limit results to stealth founders.' },
         page_size: { type: 'number', description: 'Results per page, 1-100 (default 5).' },
         cursor: { type: 'string', description: 'Opaque cursor from the previous response (next_cursor) — pass back unmodified to paginate.' },
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: [],
+      required: ['_apiKey'],
     },
   },
   {
     name: 'revternal_enrich_person',
     description:
-      'Enrich one person from their LinkedIn profile URL via Revternal — full normalized profile: name, headline, current company and title, past work experience, education, skills, certifications, and profile picture. Default (fetch_live: false) reads Revternal\'s existing record for that URL and returns found:false if there is none; set fetch_live: true to have Revternal fetch a fresh profile (slower, higher vendor cost). Use to enrich a lead, candidate, or contact you already have a LinkedIn URL for. Example: revternal_enrich_person({ linkedin_url: "https://www.linkedin.com/in/vishalv06" }).',
+      'Enrich one person from their LinkedIn profile URL via Revternal — full normalized profile: name, headline, current company and title, past work experience, education, skills, certifications, and profile picture. Default (fetch_live: false) reads Revternal\'s existing record for that URL and returns found:false if there is none; set fetch_live: true to have Revternal fetch a fresh profile (slower, higher vendor cost). Use to enrich a lead, candidate, or contact you already have a LinkedIn URL for. Requires your own Revternal API key (BYOK) — pass it as _apiKey. Example: revternal_enrich_person({ linkedin_url: "https://www.linkedin.com/in/vishalv06" }).',
     inputSchema: {
       type: 'object' as const,
       properties: {
         linkedin_url: { type: 'string', description: 'Personal LinkedIn profile URL containing /in/, e.g. "https://www.linkedin.com/in/vishalv06". A bare username is also accepted.' },
         fetch_live: { type: 'boolean', description: 'false (default): return Revternal\'s existing profile record, found:false if none (1 credit if found). true: Revternal fetches fresh profile data (5 credits, slower, higher vendor cost).' },
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: ['linkedin_url'],
+      required: ['linkedin_url', '_apiKey'],
     },
   },
   {
@@ -150,9 +150,9 @@ const tools: McpToolExport['tools'] = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key). Required — Pipeworx has no platform key for this pack right now.' },
+        _apiKey: { type: 'string', description: 'Your Revternal API key (sent as x-api-key), from https://revternal.com/signup. Required — Pipeworx has no platform key for this pack.' },
       },
-      required: [],
+      required: ['_apiKey'],
     },
   },
 ];
@@ -267,8 +267,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
   const apiKey = typeof args._apiKey === 'string' ? args._apiKey : '';
   if (!apiKey) {
     return {
-      error: 'Revternal requires an API key: pass your x-api-key value as the _apiKey argument.',
-      retry_hint: 'Pass your Revternal x-api-key value as the _apiKey argument.',
+      error: 'Revternal requires an API key: get one at https://revternal.com/signup and pass it as the _apiKey argument (sent as x-api-key).',
+      retry_hint: 'Pass your own Revternal API key as the _apiKey argument; Pipeworx has no platform key for this pack.',
     };
   }
 
@@ -388,9 +388,14 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
         return { error: `Unknown tool: ${name}` };
     }
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    // Auth and credit walls are not transient — retrying the same key cannot succeed.
+    const keyProblem = /HTTP (401|402|403)\)/.test(message);
     return {
-      error: e instanceof Error ? e.message : String(e),
-      retry_hint: 'Transient Revternal failures are common on enrichment; retry once.',
+      error: message,
+      retry_hint: keyProblem
+        ? 'Do not retry with the same key. Use a valid Revternal API key that has credits (https://revternal.com/signup) as _apiKey.'
+        : 'Transient Revternal failures are common on enrichment; retry once.',
     };
   }
 }

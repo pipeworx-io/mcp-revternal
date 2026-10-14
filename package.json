@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-revternal",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Revternal MCP — wraps Revternal's people/developer intelligence API (api.revternal.com), rebuilt 2026-10-13 onto Revternal's CURRENT product (fleet #3009 — their CEO flagged the previous build as the old product).",
   "type": "module",
   "main": "src/index.ts",
@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "^4.20260405.1"
   },
   "pipeworx": {
-    "sourceHash": "v1-d420252cf6945e944d306a61066e86e729365ae04eff9e1aa3371fdeb5a81569",
-    "sourceCommit": "3723e46c6d115bd4a1fd2175e6bf758555e7cb50"
+    "sourceHash": "v1-ee525e43269006e1258bd0177f303419a0e8246750856594f8b17193bbef64bc",
+    "sourceCommit": "4f465027cf3de54acf4976d8118ae3423a8ec9fa"
   }
 }
